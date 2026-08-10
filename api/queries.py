@@ -6,6 +6,7 @@ to avoid two slightly-different copies of the same WHERE-clause logic.
 """
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass
 from datetime import date
 
@@ -143,6 +144,62 @@ def run_aggregation(
     query = query.group_by(*group_cols)
 
     return [dict(row._mapping) for row in session.execute(query).all()]
+
+
+def _month_start(d: date) -> date:
+    return d.replace(day=1)
+
+
+def _month_end(d: date) -> date:
+    last_day = calendar.monthrange(d.year, d.month)[1]
+    return d.replace(day=last_day)
+
+
+def _year_month(d: date) -> str:
+    return d.strftime("%Y-%m")
+
+
+def _shift_year_month(year_month: str, delta_months: int) -> str:
+    year, month = int(year_month[:4]), int(year_month[5:7])
+    total = year * 12 + (month - 1) + delta_months
+    return f"{total // 12:04d}-{(total % 12) + 1:02d}"
+
+
+def _split_date_range(
+    date_from: date | None, date_to: date | None
+) -> tuple[str | None, str | None, list[tuple[date, date]]]:
+    """Splits [date_from, date_to] into a whole-month span (rollup_lo,
+    rollup_hi -- either may be None for an unbounded side) and up to two
+    partial-month day-precision ranges the rollup can't answer exactly."""
+    if date_from is None and date_to is None:
+        return None, None, []
+
+    if (
+        date_from is not None
+        and date_to is not None
+        and _year_month(date_from) == _year_month(date_to)
+    ):
+        return None, None, [(date_from, date_to)]
+
+    raw_ranges: list[tuple[date, date]] = []
+
+    rollup_lo = None
+    if date_from is not None:
+        if date_from == _month_start(date_from):
+            rollup_lo = _year_month(date_from)
+        else:
+            raw_ranges.append((date_from, _month_end(date_from)))
+            rollup_lo = _shift_year_month(_year_month(date_from), 1)
+
+    rollup_hi = None
+    if date_to is not None:
+        if date_to == _month_end(date_to):
+            rollup_hi = _year_month(date_to)
+        else:
+            raw_ranges.append((_month_start(date_to), date_to))
+            rollup_hi = _shift_year_month(_year_month(date_to), -1)
+
+    return rollup_lo, rollup_hi, raw_ranges
 
 
 def query_units(
