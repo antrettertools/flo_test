@@ -158,3 +158,26 @@ def test_land_level_totals_derive_from_kreis_grain(rollup_session):
     rows = run_aggregation(rollup_session, filters, ["region"], as_of_date=dt.date(2023, 12, 31))
     bayern = next(r for r in rows if r["region_ags"] == "09")
     assert bayern["unit_count"] == 2
+
+
+def test_totals_month_grouped_decommissioned_unit_not_phantom(rollup_session):
+    # Regression test: capacity_rollup's decommission rows are keyed by
+    # decommissioning month, not by each unit's original commissioning
+    # month, so month-grouped totals-as-of-date can't be netted correctly
+    # via the rollup-diff path -- STORAGE2_DECOMMISSIONED (commissioned
+    # 2019-05-01, decommissioned 2023-01-01) must NOT surface as a phantom
+    # +1 in 2019-05 nor a negative row in 2023-01; it should simply not
+    # appear anywhere in the as-of-date snapshot, matching what
+    # group_by=[] already nets to correctly (unit_count == 1, STORAGE1 only).
+    filters = CapacityFilters(technology=["storage"])
+    rows = run_aggregation(rollup_session, filters, ["month"], as_of_date=dt.date(2023, 6, 1))
+
+    assert all(r["unit_count"] >= 0 for r in rows)
+
+    by_month = {r["month"]: r for r in rows}
+    assert "2019-05" not in by_month
+    assert "2023-01" not in by_month
+    assert by_month["2022-11"]["unit_count"] == 1
+    assert by_month["2022-11"]["storage_capacity_kwh_sum"] == 12.5
+
+    assert sum(r["unit_count"] for r in rows) == 1

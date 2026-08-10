@@ -197,7 +197,9 @@ def _kind_aggregate(
     rollup_lo, rollup_hi, raw_ranges = _split_date_range(date_from, date_to)
     rows: list[dict] = []
 
-    use_rollup = not (rollup_lo is None and rollup_hi is None and raw_ranges)
+    no_bounds = rollup_lo is None and rollup_hi is None and raw_ranges
+    inverted = rollup_lo is not None and rollup_hi is not None and rollup_lo > rollup_hi
+    use_rollup = not no_bounds and not inverted
     if use_rollup:
         rows += _rollup_aggregate(
             session, filters, group_by, kind=kind, year_month_from=rollup_lo, year_month_to=rollup_hi
@@ -210,6 +212,67 @@ def _kind_aggregate(
         )
 
     return rows
+
+
+def _raw_totals_as_of(
+    session: Session,
+    filters: CapacityFilters,
+    group_by: list[str],
+    *,
+    as_of_date: date,
+    include_decommissioned: bool,
+) -> list[dict]:
+    """Exact fallback for month-grouped totals as of a date.
+
+    capacity_rollup's decommission rows are keyed by decommissioning month,
+    not by each unit's original commissioning month, so the fast
+    additions-minus-decommissions rollup diff in run_aggregation can't
+    correctly net a decommissioned unit out of its commissioning-month
+    bucket once grouping by month -- the subtraction lands in a different
+    key and produces a phantom row in the commissioning month plus a
+    negative row in the decommissioning month instead of the unit simply
+    vanishing from the as-of-date snapshot. Mirrors the pre-rollup raw scan
+    exactly: a single WHERE clause encoding "active as of as_of_date",
+    grouped by commissioning month -- no subtraction needed.
+    """
+    region_col = _region_column(filters.region_level)
+
+    group_cols = [CapacityUnit.category]
+    if "technology" in group_by:
+        group_cols.append(CapacityUnit.technology)
+    if "region" in group_by:
+        group_cols.append(region_col.label("region_ags"))
+    if "size_class" in group_by:
+        group_cols.append(CapacityUnit.size_class)
+    if "month" in group_by:
+        group_cols.append(func.strftime("%Y-%m", CapacityUnit.commissioning_date).label("month"))
+
+    query = select(
+        *group_cols,
+        func.count(CapacityUnit.id).label("unit_count"),
+        func.sum(
+            case((CapacityUnit.category == Category.GENERATION.value, CapacityUnit.capacity_kw))
+        ).label("capacity_kw_sum"),
+        func.sum(
+            case(
+                (CapacityUnit.category == Category.STORAGE.value, CapacityUnit.storage_capacity_kwh)
+            )
+        ).label("storage_capacity_kwh_sum"),
+    )
+
+    conditions = _build_conditions(
+        filters,
+        region_col,
+        date_from=None,
+        date_to=None,
+        as_of_date=as_of_date,
+        include_decommissioned=include_decommissioned,
+    )
+    if conditions:
+        query = query.where(*conditions)
+
+    query = query.group_by(*group_cols)
+    return [dict(row._mapping) for row in session.execute(query).all()]
 
 
 def run_aggregation(
@@ -228,9 +291,20 @@ def run_aggregation(
     Reads from capacity_rollup for whole calendar months and falls back to a
     day-precision capacity_unit scan only for the partial boundary month(s)
     of the request -- see _split_date_range. A "totals as of D" request is
-    computed as additions-up-to-D minus decommissions-up-to-D.
+    computed as additions-up-to-D minus decommissions-up-to-D, EXCEPT when
+    grouping by month, where that netting can't be expressed correctly from
+    the rollup's grain -- see _raw_totals_as_of.
     """
     if as_of_date is not None:
+        if "month" in group_by:
+            return _raw_totals_as_of(
+                session,
+                filters,
+                group_by,
+                as_of_date=as_of_date,
+                include_decommissioned=include_decommissioned,
+            )
+
         rows = _kind_aggregate(session, filters, group_by, kind="addition", date_from=None, date_to=as_of_date)
         if not include_decommissioned:
             decommissions = _kind_aggregate(
@@ -316,7 +390,7 @@ def _merge_group_rows(rows: list[dict]) -> list[dict]:
             }
         target = merged[key]
         target["unit_count"] += row["unit_count"]
-        for field in ("capacity_kw_sum", "storage_capacity_kwh_sum"):
+        for field in _NUMERIC_FIELDS[1:]:
             if row.get(field) is not None:
                 target[field] = (target[field] or 0) + row[field]
     return list(merged.values())
@@ -325,7 +399,7 @@ def _merge_group_rows(rows: list[dict]) -> list[dict]:
 def _negate_row(row: dict) -> dict:
     negated = dict(row)
     negated["unit_count"] = -row["unit_count"]
-    for field in ("capacity_kw_sum", "storage_capacity_kwh_sum"):
+    for field in _NUMERIC_FIELDS[1:]:
         if row.get(field) is not None:
             negated[field] = -row[field]
     return negated
