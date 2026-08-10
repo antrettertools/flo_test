@@ -18,6 +18,7 @@ from db.models import ImportBatch, Region
 from db.session import init_db
 from ingestion.config import PROCESSED_DB_PATH, RAW_DB_PATH
 from ingestion.mastr_transform import transform_table, upsert_capacity_units
+from ingestion.rollup import build_rollup
 from ingestion.vg250_transform import to_region_rows, transform_vg250
 
 
@@ -60,6 +61,8 @@ def build(vg250_path: str, chunk_size: int = 50_000) -> None:
         for region in to_region_rows(vg["kreise"], vg["bundeslaender"]):
             session.merge(Region(**region))
 
+        rollup_count = build_rollup(session)
+
         batch.mastr_row_counts_json = json.dumps(row_counts)
         batch.vg250_source_version = vg250_path
         batch.region_join_match_rate = (matched / total) if total else None
@@ -69,7 +72,8 @@ def build(vg250_path: str, chunk_size: int = 50_000) -> None:
         if total:
             print(
                 f"Ingested {total} units across {len(row_counts)} technologies; "
-                f"region match rate {batch.region_join_match_rate:.1%}"
+                f"region match rate {batch.region_join_match_rate:.1%}; "
+                f"{rollup_count} rollup rows"
             )
         else:
             print("No rows ingested -- did mastr_sync.sync() run first?")

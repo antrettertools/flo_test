@@ -7,8 +7,13 @@ from __future__ import annotations
 
 import argparse
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
 from ingestion.build_db import build
+from ingestion.config import PROCESSED_DB_PATH
 from ingestion.mastr_sync import sync
+from ingestion.rollup import build_rollup
 
 
 def main() -> None:
@@ -23,12 +28,20 @@ def main() -> None:
     all_parser = sub.add_parser("all", help="Run sync then build")
     all_parser.add_argument("--vg250-path", required=True, help="Path to VG250 .gpkg or unzipped folder")
 
+    sub.add_parser("rollup", help="Rebuild capacity_rollup from the existing processed DB")
+
     args = parser.parse_args()
 
     if args.command in ("sync", "all"):
         sync()
     if args.command in ("build", "all"):
         build(args.vg250_path)
+    if args.command == "rollup":
+        engine = create_engine(f"sqlite:///{PROCESSED_DB_PATH}")
+        with Session(engine) as session:
+            count = build_rollup(session)
+            session.commit()
+            print(f"Rebuilt capacity_rollup: {count} rows")
 
 
 if __name__ == "__main__":
