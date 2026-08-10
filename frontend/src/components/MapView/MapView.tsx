@@ -3,8 +3,11 @@ import { useEffect, useRef } from 'react';
 
 import { useCapacityTotals } from '../../hooks/useCapacityTotals';
 import { useRegionGeojson } from '../../hooks/useRegionGeojson';
+import { useUnitPoints } from '../../hooks/useUnitPoints';
 import { useExplorerStore } from '../../state/explorerStore';
 import { colors } from '../../styles/tokens';
+import { bubbleRadiusPx } from '../../utils/bubbleScale';
+import { clusterPoints } from './bubbleLayer';
 import { buildChoroplethColorExpression } from './choroplethLayer';
 
 const BLANK_STYLE = {
@@ -29,6 +32,10 @@ export function MapView() {
     region_level: activeLevel,
     group_by: ['region'],
     as_of_date: filters.asOfDate,
+  });
+  const { data: pointsResponse } = useUnitPoints({
+    kreis_ags: selection.kreisAgs ?? '',
+    technology: filters.technologies,
   });
 
   useEffect(() => {
@@ -84,5 +91,56 @@ export function MapView() {
     });
   }, [geojson, totals, activeLevel, filters.metric, selection.landAgs, selectLand, selectKreis]);
 
-  return <div ref={containerRef} data-testid="map-container" className="h-full w-full" />;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !pointsResponse || selection.level !== 'kreis') return;
+
+    const clustered = clusterPoints(pointsResponse.points, {
+      zoom: map.getZoom(),
+      bounds: map.getBounds().toArray().flat() as [number, number, number, number],
+    });
+    const maxCapacity = Math.max(...pointsResponse.points.map((p) => p.capacity_kw ?? p.storage_capacity_kwh ?? 0), 1);
+
+    const sourceId = 'unit-points-source';
+    const layerId = 'unit-points-circle';
+    const geojsonWithRadius = {
+      ...clustered,
+      features: clustered.features.map((f) => ({
+        ...f,
+        properties: {
+          ...f.properties,
+          radiusPx: bubbleRadiusPx(f.properties.capacityKwSum, { maxCapacityKw: maxCapacity }),
+        },
+      })),
+    };
+
+    if (map.getSource(sourceId)) {
+      (map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(geojsonWithRadius as GeoJSON.FeatureCollection);
+    } else {
+      map.addSource(sourceId, { type: 'geojson', data: geojsonWithRadius as GeoJSON.FeatureCollection });
+      map.addLayer({
+        id: layerId,
+        type: 'circle',
+        source: sourceId,
+        paint: {
+          'circle-radius': ['get', 'radiusPx'],
+          'circle-color': colors.bluegreen,
+          'circle-opacity': 0.7,
+          'circle-stroke-color': colors.white,
+          'circle-stroke-width': 1,
+        },
+      });
+    }
+  }, [pointsResponse, selection.level]);
+
+  return (
+    <div className="relative h-full w-full">
+      <div ref={containerRef} data-testid="map-container" className="h-full w-full" />
+      {pointsResponse?.truncated && (
+        <div className="absolute bottom-4 left-4 rounded-lg bg-c3-white px-3 py-2 text-sm shadow-md border border-c3-greylight">
+          Showing a partial view — zoom in further to see all units.
+        </div>
+      )}
+    </div>
+  );
 }
