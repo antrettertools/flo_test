@@ -22,9 +22,19 @@ architecture writeup. Short version:
 ## Status
 
 Phase 1 complete: schema, shared utilities, and ingestion transform logic,
-all tested against synthetic fixtures (`pytest`). Phase 2 (a real ingestion
-run producing the actual database) requires running `ingestion/` locally --
-see `ingestion/README.md`.
+all tested against synthetic fixtures (`pytest`). Phase 2 complete: a real
+ingestion run has produced `data/processed/mastr_analytics.db` -- see
+`ingestion/README.md`. Phase 3 complete: `api/` implements all routers from
+`docs/architecture-plan.md` against the real Phase 2 database, tested
+against synthetic fixtures (`pytest tests/api`). Run it locally with:
+
+```bash
+pip install -r api/requirements.txt
+DATABASE_URL=sqlite:///data/processed/mastr_analytics.db GEO_ASSETS_DIR=data/processed \
+  uvicorn api.main:app --reload
+```
+
+Then open `http://localhost:8000/docs`. Phase 4 (`frontend/`) is not yet built.
 
 ## Development
 
