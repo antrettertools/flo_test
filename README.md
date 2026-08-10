@@ -4,8 +4,8 @@ Analyzes German renewable generation and storage capacity additions from
 Bundesnetzagentur's Marktstammdatenregister (MaStR), with regional
 boundaries from BKG's VG250 product.
 
-See `/root/.claude/plans/ethereal-munching-stallman.md` (or the conversation
-history) for the full architecture writeup. Short version:
+See [`docs/architecture-plan.md`](docs/architecture-plan.md) for the full
+architecture writeup. Short version:
 
 - **`common/`** -- shared enums and size-class bucketing, no third-party deps.
 - **`db/`** -- SQLAlchemy models for the processed analytics database.
