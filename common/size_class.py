@@ -6,6 +6,8 @@ instead of duplicating thresholds.
 """
 from __future__ import annotations
 
+import math
+
 from common.enums import Category
 
 # (upper_bound_exclusive, label), ordered ascending. Last bucket is open-ended.
@@ -31,7 +33,7 @@ STORAGE_BUCKETS_KWH: list[tuple[float | None, str]] = [
 
 
 def _bucket(value: float | None, buckets: list[tuple[float | None, str]]) -> str | None:
-    if value is None:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
         return None
     for upper, label in buckets:
         if upper is None or value < upper:
