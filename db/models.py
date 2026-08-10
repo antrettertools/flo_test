@@ -94,3 +94,35 @@ class CapacityUnit(Base):
         Index("ix_capacity_unit_kreis_technology", "kreis_ags", "technology"),
         Index("ix_capacity_unit_land_technology", "land_ags", "technology"),
     )
+
+
+class CapacityRollup(Base):
+    """Pre-aggregated capacity_unit, keyed one row per (kind, category,
+    technology, kreis_ags, size_class, year_month). See ingestion/rollup.py
+    for how this is built and api/queries.py for how it's read -- both
+    treat kreis_ags as the single canonical grain; land-level and national
+    sums are derived at query time, not stored separately."""
+
+    __tablename__ = "capacity_rollup"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # 'addition' | 'decommission'
+    category: Mapped[str] = mapped_column(String(16), nullable=False)
+    technology: Mapped[str] = mapped_column(String(32), nullable=False)
+    kreis_ags: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    size_class: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    year_month: Mapped[str] = mapped_column(String(7), nullable=False)
+
+    unit_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    capacity_kw_sum: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    storage_capacity_kwh_sum: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "ix_capacity_rollup_lookup",
+            "kind",
+            "technology",
+            "kreis_ags",
+            "year_month",
+        ),
+    )
