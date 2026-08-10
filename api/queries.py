@@ -15,7 +15,7 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from common.enums import Category, Technology
-from db.models import CapacityUnit
+from db.models import CapacityRollup, CapacityUnit
 from api.schemas import RegionLevel
 
 
@@ -91,18 +91,15 @@ def _build_conditions(
     return conditions
 
 
-def run_aggregation(
+def _raw_aggregate(
     session: Session,
     filters: CapacityFilters,
     group_by: list[str],
     *,
-    date_from: date | None = None,
-    date_to: date | None = None,
-    as_of_date: date | None = None,
-    include_decommissioned: bool = False,
+    date_column,
+    date_from: date | None,
+    date_to: date | None,
 ) -> list[dict]:
-    """Always groups by category in addition to whatever's in group_by, so a
-    result row never mixes generation kW with storage kWh in one sum."""
     region_col = _region_column(filters.region_level)
 
     group_cols = [CapacityUnit.category]
@@ -113,9 +110,7 @@ def run_aggregation(
     if "size_class" in group_by:
         group_cols.append(CapacityUnit.size_class)
     if "month" in group_by:
-        group_cols.append(
-            func.strftime("%Y-%m", CapacityUnit.commissioning_date).label("month")
-        )
+        group_cols.append(func.strftime("%Y-%m", CapacityUnit.commissioning_date).label("month"))
 
     query = select(
         *group_cols,
@@ -131,19 +126,121 @@ def run_aggregation(
     )
 
     conditions = _build_conditions(
-        filters,
-        region_col,
-        date_from=date_from,
-        date_to=date_to,
-        as_of_date=as_of_date,
-        include_decommissioned=include_decommissioned,
+        filters, region_col, date_from=None, date_to=None, as_of_date=None, include_decommissioned=True
     )
-    if conditions:
-        query = query.where(*conditions)
+    conditions.append(date_column.is_not(None))
+    if date_from is not None:
+        conditions.append(date_column >= date_from)
+    if date_to is not None:
+        conditions.append(date_column <= date_to)
+    query = query.where(*conditions)
 
     query = query.group_by(*group_cols)
-
     return [dict(row._mapping) for row in session.execute(query).all()]
+
+
+def _rollup_aggregate(
+    session: Session,
+    filters: CapacityFilters,
+    group_by: list[str],
+    *,
+    kind: str,
+    year_month_from: str | None,
+    year_month_to: str | None,
+) -> list[dict]:
+    is_land = filters.region_level == RegionLevel.LAND.value
+    region_col = func.substr(CapacityRollup.kreis_ags, 1, 2) if is_land else CapacityRollup.kreis_ags
+
+    group_cols = [CapacityRollup.category]
+    if "technology" in group_by:
+        group_cols.append(CapacityRollup.technology)
+    if "region" in group_by:
+        group_cols.append(region_col.label("region_ags"))
+    if "size_class" in group_by:
+        group_cols.append(CapacityRollup.size_class)
+    if "month" in group_by:
+        group_cols.append(CapacityRollup.year_month.label("month"))
+
+    query = select(
+        *group_cols,
+        func.sum(CapacityRollup.unit_count).label("unit_count"),
+        func.sum(CapacityRollup.capacity_kw_sum).label("capacity_kw_sum"),
+        func.sum(CapacityRollup.storage_capacity_kwh_sum).label("storage_capacity_kwh_sum"),
+    ).where(CapacityRollup.kind == kind)
+
+    if filters.technology:
+        query = query.where(CapacityRollup.technology.in_(filters.technology))
+    if filters.category:
+        query = query.where(CapacityRollup.category == filters.category)
+    if filters.region_ags:
+        query = query.where(region_col.in_(filters.region_ags))
+    if filters.size_class:
+        query = query.where(CapacityRollup.size_class.in_(filters.size_class))
+    if year_month_from is not None:
+        query = query.where(CapacityRollup.year_month >= year_month_from)
+    if year_month_to is not None:
+        query = query.where(CapacityRollup.year_month <= year_month_to)
+
+    query = query.group_by(*group_cols)
+    return [dict(row._mapping) for row in session.execute(query).all()]
+
+
+def _kind_aggregate(
+    session: Session,
+    filters: CapacityFilters,
+    group_by: list[str],
+    *,
+    kind: str,
+    date_from: date | None,
+    date_to: date | None,
+) -> list[dict]:
+    rollup_lo, rollup_hi, raw_ranges = _split_date_range(date_from, date_to)
+    rows: list[dict] = []
+
+    use_rollup = not (rollup_lo is None and rollup_hi is None and raw_ranges)
+    if use_rollup:
+        rows += _rollup_aggregate(
+            session, filters, group_by, kind=kind, year_month_from=rollup_lo, year_month_to=rollup_hi
+        )
+
+    date_column = CapacityUnit.commissioning_date if kind == "addition" else CapacityUnit.decommissioning_date
+    for range_from, range_to in raw_ranges:
+        rows += _raw_aggregate(
+            session, filters, group_by, date_column=date_column, date_from=range_from, date_to=range_to
+        )
+
+    return rows
+
+
+def run_aggregation(
+    session: Session,
+    filters: CapacityFilters,
+    group_by: list[str],
+    *,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    as_of_date: date | None = None,
+    include_decommissioned: bool = False,
+) -> list[dict]:
+    """Always groups by category in addition to whatever's in group_by, so a
+    result row never mixes generation kW with storage kWh in one sum.
+
+    Reads from capacity_rollup for whole calendar months and falls back to a
+    day-precision capacity_unit scan only for the partial boundary month(s)
+    of the request -- see _split_date_range. A "totals as of D" request is
+    computed as additions-up-to-D minus decommissions-up-to-D.
+    """
+    if as_of_date is not None:
+        rows = _kind_aggregate(session, filters, group_by, kind="addition", date_from=None, date_to=as_of_date)
+        if not include_decommissioned:
+            decommissions = _kind_aggregate(
+                session, filters, group_by, kind="decommission", date_from=None, date_to=as_of_date
+            )
+            rows += [_negate_row(r) for r in decommissions]
+        return _merge_group_rows(rows)
+
+    rows = _kind_aggregate(session, filters, group_by, kind="addition", date_from=date_from, date_to=date_to)
+    return _merge_group_rows(rows)
 
 
 def _month_start(d: date) -> date:

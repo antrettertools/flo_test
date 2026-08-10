@@ -1,6 +1,8 @@
 import datetime as dt
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 from api.queries import _month_end, _month_start, _shift_year_month, _split_date_range
 
@@ -86,3 +88,73 @@ def test_negate_row_flips_count_and_sums():
     assert negated["capacity_kw_sum"] == -10.0
     assert negated["storage_capacity_kwh_sum"] is None
     assert negated["category"] == "generation"  # non-numeric fields untouched
+
+
+from db.session import init_db
+from ingestion.rollup import build_rollup
+from api.queries import CapacityFilters, run_aggregation
+from tests.fixtures.seed import seed_capacity_units
+
+
+@pytest.fixture()
+def rollup_session():
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    init_db(engine)
+    session = Session(engine)
+    seed_capacity_units(session)
+    session.commit()
+    build_rollup(session)
+    session.commit()
+    yield session
+    session.close()
+
+
+def test_totals_as_of_date_matches_raw_and_rollup_combined(rollup_session):
+    # fixture has SOLAR1 (2022-03-15, 50kW) and SOLAR2 (2023-07-01, 8kW) in Muenchen
+    filters = CapacityFilters(technology=["solar"])
+    rows = run_aggregation(rollup_session, filters, ["technology"], as_of_date=dt.date(2023, 7, 15))
+    solar = next(r for r in rows if r.get("technology") == "solar")
+    assert solar["unit_count"] == 2
+    assert solar["capacity_kw_sum"] == 58.0
+
+
+def test_totals_excludes_decommissioned_by_default(rollup_session):
+    # STORAGE2_DECOMMISSIONED: commissioned 2019-05-01, decommissioned 2023-01-01
+    filters = CapacityFilters(technology=["storage"])
+    rows = run_aggregation(rollup_session, filters, [], as_of_date=dt.date(2023, 6, 1))
+    storage = next(r for r in rows if r["category"] == "storage")
+    assert storage["unit_count"] == 1  # only STORAGE1, STORAGE2 is decommissioned by June 2023
+
+
+def test_totals_includes_decommissioned_when_requested(rollup_session):
+    filters = CapacityFilters(technology=["storage"])
+    rows = run_aggregation(
+        rollup_session, filters, [], as_of_date=dt.date(2023, 6, 1), include_decommissioned=True
+    )
+    storage = next(r for r in rows if r["category"] == "storage")
+    assert storage["unit_count"] == 2
+
+
+def test_additions_partial_month_range(rollup_session):
+    # SOLAR2 commissioned 2023-07-01 -- range starts mid-month, excludes it
+    filters = CapacityFilters(technology=["solar"])
+    rows = run_aggregation(
+        rollup_session, filters, [], date_from=dt.date(2023, 7, 2), date_to=dt.date(2023, 7, 31)
+    )
+    assert rows == []
+
+
+def test_additions_whole_month_range_includes_it(rollup_session):
+    filters = CapacityFilters(technology=["solar"])
+    rows = run_aggregation(
+        rollup_session, filters, [], date_from=dt.date(2023, 7, 1), date_to=dt.date(2023, 7, 31)
+    )
+    solar = next(r for r in rows if r["category"] == "generation")
+    assert solar["unit_count"] == 1
+
+
+def test_land_level_totals_derive_from_kreis_grain(rollup_session):
+    filters = CapacityFilters(technology=["solar"], region_level="land")
+    rows = run_aggregation(rollup_session, filters, ["region"], as_of_date=dt.date(2023, 12, 31))
+    bayern = next(r for r in rows if r["region_ags"] == "09")
+    assert bayern["unit_count"] == 2
