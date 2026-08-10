@@ -4,3 +4,6 @@ pyogrio
 shapely
 sqlalchemy
 pytest
+fastapi
+uvicorn
+httpx

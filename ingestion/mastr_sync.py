@@ -7,6 +7,8 @@ dev sandbox.
 """
 from __future__ import annotations
 
+from sqlalchemy import create_engine
+
 from ingestion.config import RAW_DB_PATH, TECHNOLOGIES
 
 
@@ -14,5 +16,6 @@ def sync(technologies: list[str] | None = None) -> None:
     from open_mastr import Mastr  # imported lazily -- not a dependency of api/
 
     RAW_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    db = Mastr(con=f"sqlite:///{RAW_DB_PATH}")
+    engine = create_engine(f"sqlite:///{RAW_DB_PATH}")
+    db = Mastr(engine=engine)
     db.download(method="bulk", data=technologies or TECHNOLOGIES)

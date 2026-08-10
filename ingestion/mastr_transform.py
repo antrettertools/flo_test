@@ -63,7 +63,7 @@ def transform_table(
     category = CATEGORY_BY_TECHNOLOGY[technology]
     rows: list[dict] = []
 
-    for _, r in df.iterrows():
+    for r in df.to_dict(orient="records"):
         gemeinde_ags = r.get(column_map.gemeinde_ags)
         kreis_ags, land_ags = _derive_region_codes(gemeinde_ags)
 
@@ -100,21 +100,40 @@ def transform_table(
 
 
 def upsert_capacity_units(
-    session: Session, rows: list[dict], import_batch_id: int | None = None
+    session: Session,
+    rows: list[dict],
+    import_batch_id: int | None = None,
+    batch_size: int = 2000,
 ) -> int:
-    """Insert-or-update capacity_unit rows keyed by mastr_nummer (idempotent re-sync)."""
-    count = 0
-    for row in rows:
-        existing = (
-            session.query(CapacityUnit)
-            .filter_by(mastr_nummer=row["mastr_nummer"])
-            .one_or_none()
+    """Insert-or-update capacity_unit rows keyed by mastr_nummer (idempotent re-sync).
+
+    Batches lookups and writes instead of one SELECT+INSERT/UPDATE per row --
+    at MaStR's real scale (millions of rows for solar/storage alone) the
+    original row-by-row ORM loop was many hours of unnecessary round trips.
+    """
+    for start in range(0, len(rows), batch_size):
+        chunk = rows[start : start + batch_size]
+        mastr_nummern = [row["mastr_nummer"] for row in chunk]
+        existing_ids = dict(
+            session.query(CapacityUnit.mastr_nummer, CapacityUnit.id)
+            .filter(CapacityUnit.mastr_nummer.in_(mastr_nummern))
+            .all()
         )
-        if existing is not None:
-            for key, value in row.items():
-                setattr(existing, key, value)
-            existing.import_batch_id = import_batch_id
-        else:
-            session.add(CapacityUnit(**row, import_batch_id=import_batch_id))
-        count += 1
-    return count
+
+        to_insert = []
+        to_update = []
+        for row in chunk:
+            record = {**row, "import_batch_id": import_batch_id}
+            existing_id = existing_ids.get(record["mastr_nummer"])
+            if existing_id is not None:
+                record["id"] = existing_id
+                to_update.append(record)
+            else:
+                to_insert.append(record)
+
+        if to_insert:
+            session.bulk_insert_mappings(CapacityUnit, to_insert)
+        if to_update:
+            session.bulk_update_mappings(CapacityUnit, to_update)
+
+    return len(rows)

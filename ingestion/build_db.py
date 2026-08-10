@@ -21,7 +21,12 @@ from ingestion.mastr_transform import transform_table, upsert_capacity_units
 from ingestion.vg250_transform import to_region_rows, transform_vg250
 
 
-def build(vg250_path: str) -> None:
+def build(vg250_path: str, chunk_size: int = 50_000) -> None:
+    """Streams each raw MaStR table through in chunks rather than loading it whole --
+    solar/storage tables run into the millions of rows, and materializing an
+    entire table as a DataFrame + a parallel list of dict rows at once was
+    using tens of GB of memory."""
+    PROCESSED_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(f"sqlite:///{PROCESSED_DB_PATH}")
     init_db(engine)
     raw_engine = create_engine(f"sqlite:///{RAW_DB_PATH}")
@@ -36,14 +41,20 @@ def build(vg250_path: str) -> None:
         matched = 0
         for table_name, technology in MASTR_TABLE_TO_TECHNOLOGY.items():
             try:
-                df = pd.read_sql_table(table_name, raw_engine)
+                chunks = pd.read_sql_table(table_name, raw_engine, chunksize=chunk_size)
             except ValueError:
                 continue  # technology wasn't synced this run
-            rows = transform_table(df, technology, table_name)
-            upsert_capacity_units(session, rows, import_batch_id=batch.id)
-            row_counts[table_name] = len(rows)
-            total += len(rows)
-            matched += sum(1 for r in rows if r["kreis_ags"])
+
+            table_total = 0
+            for chunk_df in chunks:
+                rows = transform_table(chunk_df, technology, table_name)
+                upsert_capacity_units(session, rows, import_batch_id=batch.id)
+                table_total += len(rows)
+                matched += sum(1 for r in rows if r["kreis_ags"])
+                print(f"  {table_name}: {table_total} rows so far", flush=True)
+
+            row_counts[table_name] = table_total
+            total += table_total
 
         vg = transform_vg250(vg250_path)
         for region in to_region_rows(vg["kreise"], vg["bundeslaender"]):
