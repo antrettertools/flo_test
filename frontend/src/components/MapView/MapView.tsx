@@ -22,7 +22,7 @@ export function MapView() {
   const selectLand = useExplorerStore((s) => s.selectLand);
   const selectKreis = useExplorerStore((s) => s.selectKreis);
 
-  const activeLevel = selection.level === 'national' ? 'land' : selection.level === 'land' ? 'kreis' : 'kreis';
+  const activeLevel = selection.level === 'national' ? 'land' : 'kreis';
   const { data: geojson } = useRegionGeojson(activeLevel);
   const { data: totals } = useCapacityTotals({
     technology: filters.technologies,
@@ -63,8 +63,17 @@ export function MapView() {
       map.on('click', layerId, (e) => {
         const ags = e.features?.[0]?.properties?.ags as string | undefined;
         if (!ags) return;
-        if (activeLevel === 'land') selectLand(ags);
-        else if (selection.landAgs) selectKreis(selection.landAgs, ags);
+        if (activeLevel === 'land') {
+          selectLand(ags);
+        } else {
+          // Read landAgs from the store at click time, not from this closure's
+          // render-time `selection`: the click listener is registered once per
+          // sourceId (see the `!map.getSource(sourceId)` guard above) and is
+          // never re-bound afterward, so a value captured here would go stale
+          // the moment the user picks a different Land later.
+          const currentLandAgs = useExplorerStore.getState().selection.landAgs;
+          if (currentLandAgs) selectKreis(currentLandAgs, ags);
+        }
       });
     }
 
