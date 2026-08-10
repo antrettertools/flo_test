@@ -7,6 +7,7 @@ import { useUnitPoints } from '../../hooks/useUnitPoints';
 import { useExplorerStore } from '../../state/explorerStore';
 import { colors } from '../../styles/tokens';
 import { bubbleRadiusPx } from '../../utils/bubbleScale';
+import { Alert } from '../ui/Alert';
 import { clusterPoints } from './bubbleLayer';
 import { buildChoroplethColorExpression } from './choroplethLayer';
 
@@ -93,7 +94,21 @@ export function MapView() {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !pointsResponse || selection.level !== 'kreis') return;
+    if (!map) return;
+
+    const sourceId = 'unit-points-source';
+    const layerId = 'unit-points-circle';
+
+    if (!pointsResponse || selection.level !== 'kreis') {
+      // Leaving Kreis level (or no data loaded yet) — actively clear any
+      // bubbles left over from a previously selected Kreis. `useUnitPoints`
+      // becomes a disabled query with no data once kreis_ags is empty, so
+      // without this the old Kreis's bubbles would stay drawn indefinitely
+      // over the new Land/national view.
+      if (map.getLayer(layerId)) map.removeLayer(layerId);
+      if (map.getSource(sourceId)) map.removeSource(sourceId);
+      return;
+    }
 
     const clustered = clusterPoints(pointsResponse.points, {
       zoom: map.getZoom(),
@@ -101,8 +116,6 @@ export function MapView() {
     });
     const maxCapacity = Math.max(...pointsResponse.points.map((p) => p.capacity_kw ?? p.storage_capacity_kwh ?? 0), 1);
 
-    const sourceId = 'unit-points-source';
-    const layerId = 'unit-points-circle';
     const geojsonWithRadius = {
       ...clustered,
       features: clustered.features.map((f) => ({
@@ -137,8 +150,8 @@ export function MapView() {
     <div className="relative h-full w-full">
       <div ref={containerRef} data-testid="map-container" className="h-full w-full" />
       {pointsResponse?.truncated && (
-        <div className="absolute bottom-4 left-4 rounded-lg bg-c3-white px-3 py-2 text-sm shadow-md border border-c3-greylight">
-          Showing a partial view — zoom in further to see all units.
+        <div className="absolute bottom-4 left-4 max-w-xs shadow-md">
+          <Alert type="warning">Showing a partial view — zoom in further to see all units.</Alert>
         </div>
       )}
     </div>
