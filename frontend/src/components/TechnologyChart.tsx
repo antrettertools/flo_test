@@ -19,7 +19,11 @@ interface TechnologyChartProps {
 
 export function TechnologyChart({ results, metric }: TechnologyChartProps) {
   if (results.length === 0) {
-    return <p className="text-sm text-c3-greydark">No data for the current filters.</p>;
+    return (
+      <p data-testid="technology-chart" className="text-sm text-c3-greydark">
+        No data for the current filters.
+      </p>
+    );
   }
 
   const byTechnology = new Map<string, number>();

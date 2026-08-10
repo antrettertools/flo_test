@@ -10,7 +10,9 @@ export function FilterPanel() {
   const setSizeClasses = useExplorerStore((s) => s.setSizeClasses);
   const { data: sizeClassMeta } = useSizeClasses();
 
-  const generationSizeClasses = sizeClassMeta?.find((m) => m.category === 'generation')?.size_classes ?? [];
+  const generationSizeClasses = Array.isArray(sizeClassMeta)
+    ? (sizeClassMeta.find((m) => m.category === 'generation')?.size_classes ?? [])
+    : [];
 
   function toggleSizeClass(sizeClass: string, checked: boolean) {
     setSizeClasses(
