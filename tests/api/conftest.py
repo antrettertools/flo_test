@@ -1,11 +1,11 @@
 import json
-import tempfile
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from api.deps import get_db, get_geo_assets_dir
 from api.main import app
@@ -14,15 +14,17 @@ from tests.fixtures.seed import seed_all
 
 
 @pytest.fixture()
-def db_session(tmp_path):
-    db_file = tmp_path / "test.db"
-    engine = create_engine(f"sqlite:///{db_file}")
+def db_session():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     init_db(engine)
     session = sessionmaker(bind=engine)()
     seed_all(session)
     yield session
     session.close()
-    engine.dispose()
 
 
 @pytest.fixture()
