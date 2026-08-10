@@ -45,4 +45,4 @@ def get_region_geojson(
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"{filename} not found in GEO_ASSETS_DIR")
 
-    return JSONResponse(content=json.loads(path.read_text()))
+    return JSONResponse(content=json.loads(path.read_text(encoding="utf-8")))

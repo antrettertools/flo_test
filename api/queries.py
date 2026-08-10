@@ -3,6 +3,18 @@
 Kept in one module so both routers filter identically -- the architecture
 plan calls this out explicitly ("shared SQLAlchemy aggregation builders")
 to avoid two slightly-different copies of the same WHERE-clause logic.
+
+Temporal-filter contract (the three endpoints deliberately disagree --
+this is the one place that says so): `/capacity/totals` and
+`/capacity/additions` treat a unit as "active as of `as_of_date`" only
+when `commissioning_date <= as_of_date`; a NULL `commissioning_date`
+therefore silently drops the unit from every total (but it still lands
+in `/capacity/additions`' `month: null` bucket when no date range is
+given). `/units` intentionally ignores `as_of_date` /
+`include_decommissioned` and always returns every status and every
+date -- it is not filtered to match `/capacity/totals`' population, so a
+drill-down from a totals figure to `/units` for the same filters will not
+always reconcile in row count.
 """
 from __future__ import annotations
 
