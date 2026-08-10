@@ -53,3 +53,36 @@ def test_split_date_range_only_upper_bound():
     assert lo is None
     assert hi == "2023-07"
     assert raw == [(dt.date(2023, 8, 1), dt.date(2023, 8, 10))]
+
+
+from api.queries import _merge_group_rows, _negate_row
+
+
+def test_merge_group_rows_sums_matching_keys():
+    rows = [
+        {"category": "generation", "technology": "solar", "unit_count": 2, "capacity_kw_sum": 10.0, "storage_capacity_kwh_sum": None},
+        {"category": "generation", "technology": "solar", "unit_count": 3, "capacity_kw_sum": 5.0, "storage_capacity_kwh_sum": None},
+        {"category": "generation", "technology": "wind", "unit_count": 1, "capacity_kw_sum": 100.0, "storage_capacity_kwh_sum": None},
+    ]
+    merged = _merge_group_rows(rows)
+    assert len(merged) == 2
+    solar = next(r for r in merged if r["technology"] == "solar")
+    assert solar["unit_count"] == 5
+    assert solar["capacity_kw_sum"] == 15.0
+
+
+def test_merge_group_rows_treats_none_as_no_contribution():
+    rows = [
+        {"category": "storage", "technology": "storage", "unit_count": 1, "capacity_kw_sum": None, "storage_capacity_kwh_sum": None},
+    ]
+    merged = _merge_group_rows(rows)
+    assert merged[0]["capacity_kw_sum"] is None
+
+
+def test_negate_row_flips_count_and_sums():
+    row = {"category": "generation", "technology": "solar", "unit_count": 3, "capacity_kw_sum": 10.0, "storage_capacity_kwh_sum": None}
+    negated = _negate_row(row)
+    assert negated["unit_count"] == -3
+    assert negated["capacity_kw_sum"] == -10.0
+    assert negated["storage_capacity_kwh_sum"] is None
+    assert negated["category"] == "generation"  # non-numeric fields untouched

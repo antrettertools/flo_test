@@ -202,6 +202,38 @@ def _split_date_range(
     return rollup_lo, rollup_hi, raw_ranges
 
 
+_NUMERIC_FIELDS = ("unit_count", "capacity_kw_sum", "storage_capacity_kwh_sum")
+_GROUP_KEY_FIELDS = ("category", "technology", "region_ags", "size_class", "month")
+
+
+def _merge_group_rows(rows: list[dict]) -> list[dict]:
+    merged: dict[tuple, dict] = {}
+    for row in rows:
+        key = tuple(row.get(k) for k in _GROUP_KEY_FIELDS)
+        if key not in merged:
+            merged[key] = {
+                **{k: row.get(k) for k in _GROUP_KEY_FIELDS},
+                "unit_count": 0,
+                "capacity_kw_sum": None,
+                "storage_capacity_kwh_sum": None,
+            }
+        target = merged[key]
+        target["unit_count"] += row["unit_count"]
+        for field in ("capacity_kw_sum", "storage_capacity_kwh_sum"):
+            if row.get(field) is not None:
+                target[field] = (target[field] or 0) + row[field]
+    return list(merged.values())
+
+
+def _negate_row(row: dict) -> dict:
+    negated = dict(row)
+    negated["unit_count"] = -row["unit_count"]
+    for field in ("capacity_kw_sum", "storage_capacity_kwh_sum"):
+        if row.get(field) is not None:
+            negated[field] = -row[field]
+    return negated
+
+
 def query_units(
     session: Session,
     filters: CapacityFilters,
