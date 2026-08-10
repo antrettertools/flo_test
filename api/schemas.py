@@ -106,3 +106,20 @@ class UnitListResponse(BaseModel):
     limit: int
     offset: int
     items: list[UnitOut]
+
+
+class UnitPoint(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    mastr_nummer: str
+    technology: str
+    category: str
+    capacity_kw: float | None
+    storage_capacity_kwh: float | None
+    latitude: float
+    longitude: float
+
+
+class UnitPointsResponse(BaseModel):
+    points: list[UnitPoint]
+    truncated: bool

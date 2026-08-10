@@ -47,6 +47,8 @@ def seed_capacity_units(session: Session) -> None:
                 kreis_ags="09162",
                 land_ags="09",
                 land_name="Bayern",
+                latitude=48.1351,
+                longitude=11.5820,
             ),
             CapacityUnit(
                 mastr_nummer="SOLAR2",
@@ -65,6 +67,8 @@ def seed_capacity_units(session: Session) -> None:
                 kreis_ags="09162",
                 land_ags="09",
                 land_name="Bayern",
+                latitude=48.1400,
+                longitude=11.5900,
             ),
             CapacityUnit(
                 mastr_nummer="WIND1",
@@ -83,6 +87,8 @@ def seed_capacity_units(session: Session) -> None:
                 kreis_ags="11000",
                 land_ags="11",
                 land_name="Berlin",
+                latitude=52.5200,
+                longitude=13.4050,
             ),
             CapacityUnit(
                 mastr_nummer="STORAGE1",
@@ -102,6 +108,8 @@ def seed_capacity_units(session: Session) -> None:
                 kreis_ags="09162",
                 land_ags="09",
                 land_name="Bayern",
+                latitude=48.1360,
+                longitude=11.5830,
             ),
             CapacityUnit(
                 mastr_nummer="STORAGE2_DECOMMISSIONED",
