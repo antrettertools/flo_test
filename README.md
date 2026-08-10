@@ -22,9 +22,12 @@ architecture writeup. Short version:
 ## Status
 
 Phase 1 complete: schema, shared utilities, and ingestion transform logic,
-all tested against synthetic fixtures (`pytest`). Phase 2 complete: a real
-ingestion run has produced `data/processed/mastr_analytics.db` -- see
-`ingestion/README.md`. Phase 3 complete: `api/` implements all routers from
+all tested against synthetic fixtures (`pytest`). Phase 2 complete: the
+ingestion pipeline (`ingestion/cli.py sync|build|all`) is implemented and
+tested against synthetic fixtures, and runs against real MaStR/VG250 downloads
+-- see `ingestion/README.md`. Run it locally to produce `data/processed/mastr_analytics.db`
+(gitignored -- a per-machine artifact, not shipped in the repo; a full bulk sync
+can take a couple of hours). Phase 3 complete: `api/` implements all routers from
 `docs/architecture-plan.md` against the real Phase 2 database, tested
 against synthetic fixtures (`pytest tests/api`). Run it locally with:
 
