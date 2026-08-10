@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from api.deps import get_db, get_geo_assets_dir
 from api.main import app
 from db.session import init_db
+from ingestion.rollup import build_rollup
 from tests.fixtures.seed import seed_all
 
 
@@ -23,6 +24,8 @@ def db_session():
     init_db(engine)
     session = sessionmaker(bind=engine)()
     seed_all(session)
+    build_rollup(session)
+    session.commit()
     yield session
     session.close()
 
