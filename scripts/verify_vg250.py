@@ -33,17 +33,26 @@ def main() -> None:
         sys.exit(1)
 
     # VG250 shapefiles are conventionally named VG250_KRS.shp (Kreise) and
-    # VG250_LAN.shp (Bundeslaender); search recursively since the zip layout
-    # varies by release.
+    # VG250_LAN.shp (Bundeslaender). BKG's NUTS250 product uses NUTS250_N3
+    # (~= Kreise) and NUTS250_N1 (~= Bundeslaender) instead -- geographically
+    # similar but keyed by NUTS codes, not AGS, unless BKG also carries AGS
+    # as a side attribute. Match either naming; search recursively since the
+    # zip layout varies by release.
     candidates = {
-        "kreise": glob.glob(os.path.join(root, "**", "*KRS*.shp"), recursive=True),
-        "bundeslaender": glob.glob(os.path.join(root, "**", "*LAN*.shp"), recursive=True),
+        "kreise": (
+            glob.glob(os.path.join(root, "**", "*KRS*.shp"), recursive=True)
+            or glob.glob(os.path.join(root, "**", "*NUTS250_N3*.shp"), recursive=True)
+        ),
+        "bundeslaender": (
+            glob.glob(os.path.join(root, "**", "*LAN*.shp"), recursive=True)
+            or glob.glob(os.path.join(root, "**", "*NUTS250_N1*.shp"), recursive=True)
+        ),
     }
 
     any_found = False
     for level, paths in candidates.items():
         if not paths:
-            print(f"MISSING: no shapefile found for {level} (looked for *KRS*/*LAN*.shp under {root})")
+            print(f"MISSING: no shapefile found for {level} (looked for *KRS*/*LAN*/*NUTS250_N3*/*NUTS250_N1*.shp under {root})")
             continue
         any_found = True
         path = paths[0]
