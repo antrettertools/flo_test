@@ -7,40 +7,33 @@ export function getPlotlyLayout(
   subtitle = '',
   options: Partial<Layout> = {}
 ): Partial<Layout> {
-  const annotations: Partial<Layout>['annotations'] = [];
-
-  if (title) {
-    annotations.push({
-      text: title,
-      xref: 'paper',
-      yref: 'paper',
-      x: 0.08,
-      y: 0.98,
-      xanchor: 'left',
-      yanchor: 'top',
-      showarrow: false,
-      font: { family: '"Jost", "Lato", Arial, sans-serif', size: fontSize.title, color: colors.text },
-    });
-  }
-
-  if (subtitle) {
-    annotations.push({
-      text: subtitle,
-      xref: 'paper',
-      yref: 'paper',
-      x: 0.08,
-      y: 0.93,
-      xanchor: 'left',
-      yanchor: 'top',
-      showarrow: false,
-      font: { family: '"Lato", Arial, sans-serif', size: fontSize.subtitle, color: colors.bluegreen },
-    });
-  }
+  // Plotly's own `layout.title` (not a hand-rolled `paper`-anchored
+  // annotation) is what correctly reserves and renders inside the margin
+  // above the plot area -- annotation `yref: 'paper'` coordinates here are
+  // scoped to the plot/axes box itself, not the full figure including
+  // margins, so a title placed that way lands inside the plot instead of
+  // above it (verified against this project's bundled plotly.js-dist-min).
+  const titleLayout = title
+    ? {
+        text: title,
+        x: 0.08,
+        xanchor: 'left' as const,
+        font: { family: '"Jost", "Lato", Arial, sans-serif', size: fontSize.title, color: colors.text },
+        ...(subtitle
+          ? {
+              subtitle: {
+                text: subtitle,
+                font: { family: '"Lato", Arial, sans-serif', size: fontSize.subtitle, color: colors.bluegreen },
+              },
+            }
+          : {}),
+      }
+    : undefined;
 
   return {
+    title: titleLayout,
     paper_bgcolor: colors.white,
     plot_bgcolor: colors.white,
-    annotations,
     font: { family: '"Lato", Arial, sans-serif', size: fontSize.axisTick, color: colors.text },
     xaxis: {
       showline: true,
