@@ -50,6 +50,15 @@ python -m ingestion.cli rollup
 (`MASTR_PROCESSED_DIR` controls where this looks for the DB, same as `build`; defaults to
 `data/processed`.)
 
+Likewise, a new index added to an existing table (as opposed to a whole new table) isn't
+picked up by `init_db`'s `create_all` either -- if `as_of_date` queries feel slow on a DB
+built before an index was added to `db/models.py`, create it directly, e.g.:
+
+```bash
+sqlite3 data/processed/mastr_analytics.db \
+  "CREATE INDEX IF NOT EXISTS ix_capacity_unit_technology_decommissioning ON capacity_unit (technology, decommissioning_date)"
+```
+
 ## Development
 
 ```bash

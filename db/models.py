@@ -91,6 +91,7 @@ class CapacityUnit(Base):
 
     __table_args__ = (
         Index("ix_capacity_unit_technology_commissioning", "technology", "commissioning_date"),
+        Index("ix_capacity_unit_technology_decommissioning", "technology", "decommissioning_date"),
         Index("ix_capacity_unit_kreis_technology", "kreis_ags", "technology"),
         Index("ix_capacity_unit_land_technology", "land_ags", "technology"),
     )
