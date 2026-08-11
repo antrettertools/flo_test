@@ -3,16 +3,32 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { layerClickHandlers, addedSources, addedLayers } = vi.hoisted(() => ({
-  layerClickHandlers: new Map<string, (e: unknown) => void>(),
-  addedSources: new Set<string>(),
-  addedLayers: new Set<string>(),
-}));
+const { layerClickHandlers, addedSources, addedLayers, pendingLoadCallbacks, fireMapLoad } = vi.hoisted(() => {
+  const pendingLoadCallbacks: Array<() => void> = [];
+  return {
+    layerClickHandlers: new Map<string, (e: unknown) => void>(),
+    addedSources: new Set<string>(),
+    addedLayers: new Set<string>(),
+    pendingLoadCallbacks,
+    // Real maplibre-gl throws "Style is not done loading" from addSource/
+    // addLayer/etc. until the map's 'load' event has fired. The mock never
+    // fires 'load' on its own -- tests must call this explicitly, so the
+    // must-wait-for-load contract MapView.tsx relies on is actually
+    // exercised instead of masked by an always-on mock.
+    fireMapLoad: () => {
+      pendingLoadCallbacks.splice(0).forEach((cb) => cb());
+    },
+  };
+});
 
 vi.mock('maplibre-gl', () => {
   class MapMock {
-    on = vi.fn((event: string, layerId: string, handler: (e: unknown) => void) => {
-      if (event === 'click') layerClickHandlers.set(layerId, handler);
+    on = vi.fn((event: string, layerIdOrHandler: string | (() => void), handler?: (e: unknown) => void) => {
+      if (event === 'click' && handler) {
+        layerClickHandlers.set(layerIdOrHandler as string, handler);
+      } else if (event === 'load') {
+        pendingLoadCallbacks.push(layerIdOrHandler as () => void);
+      }
     });
     addSource = vi.fn((id: string) => {
       addedSources.add(id);
@@ -76,7 +92,13 @@ import { MapView } from './MapView';
 
 function renderWithQuery(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  const result = render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  // The map's mount effect (synchronous, inside render) has already
+  // registered its 'load' handler by this point -- fire it immediately so
+  // every other test can keep asserting against a loaded map without having
+  // to know about this mechanism itself.
+  act(() => fireMapLoad());
+  return result;
 }
 
 describe('MapView', () => {
@@ -85,11 +107,40 @@ describe('MapView', () => {
     layerClickHandlers.clear();
     addedSources.clear();
     addedLayers.clear();
+    pendingLoadCallbacks.length = 0;
   });
 
   it('renders a map container without crashing', () => {
     renderWithQuery(<MapView />);
     expect(screen.getByTestId('map-container')).toBeInTheDocument();
+  });
+
+  describe('waits for the map style to finish loading', () => {
+    it('does not touch the map (addSource/addLayer) until the load event fires', async () => {
+      // Bypass renderWithQuery's auto-fire so 'load' stays pending, then
+      // give the geojson query plenty of real time to resolve -- this is
+      // the actual regression for "Style is not done loading": the bug was
+      // that MapView called addSource/addLayer as soon as geojson data was
+      // ready, without checking whether the map's style had finished
+      // loading yet.
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MapView />
+        </QueryClientProvider>,
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(addedSources.size).toBe(0);
+      expect(addedLayers.size).toBe(0);
+
+      act(() => fireMapLoad());
+
+      await waitFor(() => {
+        expect(addedSources.has('land-source')).toBe(true);
+      });
+      expect(addedLayers.has('land-fill')).toBe(true);
+    });
   });
 
   describe('Kreis click handler stale-closure regression', () => {

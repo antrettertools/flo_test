@@ -1,5 +1,5 @@
 import * as maplibregl from 'maplibre-gl';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useCapacityTotals } from '../../hooks/useCapacityTotals';
 import { useRegionGeojson } from '../../hooks/useRegionGeojson';
@@ -20,6 +20,11 @@ const BLANK_STYLE = {
 export function MapView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  // maplibre-gl throws "Style is not done loading" if addSource/addLayer/
+  // setPaintProperty/setFeatureState are called before the map's style has
+  // finished its (async, even for a trivial inline style) load. Every other
+  // effect below must wait for this before touching the map.
+  const [styleLoaded, setStyleLoaded] = useState(false);
 
   const selection = useExplorerStore((s) => s.selection);
   const filters = useExplorerStore((s) => s.filters);
@@ -41,21 +46,24 @@ export function MapView() {
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-    mapRef.current = new maplibregl.Map({
+    const map = new maplibregl.Map({
       container: containerRef.current,
       style: BLANK_STYLE,
       center: [10.4515, 51.1657],
       zoom: 5,
     });
+    mapRef.current = map;
+    map.on('load', () => setStyleLoaded(true));
     return () => {
-      mapRef.current?.remove();
+      map.remove();
       mapRef.current = null;
+      setStyleLoaded(false);
     };
   }, []);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !geojson) return;
+    if (!map || !geojson || !styleLoaded) return;
 
     // Only one of land-fill/kreis-fill should ever be on the map at once.
     // Task 12 solved this exact problem for the bubble layer (see the
@@ -115,11 +123,11 @@ export function MapView() {
       const value = filters.metric === 'capacity' ? row.capacity_kw_sum : row.unit_count;
       map.setFeatureState({ source: sourceId, id: row.region_ags }, { value: value ?? 0 });
     });
-  }, [geojson, totals, activeLevel, filters.metric, selection.landAgs, selectLand, selectKreis]);
+  }, [geojson, totals, activeLevel, filters.metric, selection.landAgs, selectLand, selectKreis, styleLoaded]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !styleLoaded) return;
 
     const sourceId = 'unit-points-source';
     const layerId = 'unit-points-circle';
@@ -169,7 +177,7 @@ export function MapView() {
         },
       });
     }
-  }, [pointsResponse, selection.level]);
+  }, [pointsResponse, selection.level, styleLoaded]);
 
   return (
     <div className="relative h-full w-full">
