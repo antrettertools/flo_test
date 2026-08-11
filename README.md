@@ -37,7 +37,18 @@ DATABASE_URL=sqlite:///data/processed/mastr_analytics.db GEO_ASSETS_DIR=data/pro
   uvicorn api.main:app --reload
 ```
 
-Then open `http://localhost:8000/docs`. Phase 4 (`frontend/`) is not yet built.
+Then open `http://localhost:8000/docs`. Phase 4 complete: `frontend/` is a React/Vite
+dashboard over this API -- see `frontend/README.md` to run it.
+
+If you already have a `mastr_analytics.db` from before the Phase 4 rollup table existed,
+you don't need to re-run `sync`/`build` -- just add the table and populate it in place:
+
+```bash
+python -m ingestion.cli rollup
+```
+
+(`MASTR_PROCESSED_DIR` controls where this looks for the DB, same as `build`; defaults to
+`data/processed`.)
 
 ## Development
 

@@ -10,6 +10,7 @@ import argparse
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from db.session import init_db
 from ingestion.build_db import build
 from ingestion.config import PROCESSED_DB_PATH
 from ingestion.mastr_sync import sync
@@ -38,6 +39,7 @@ def main() -> None:
         build(args.vg250_path)
     if args.command == "rollup":
         engine = create_engine(f"sqlite:///{PROCESSED_DB_PATH}")
+        init_db(engine)  # additive create_all -- needed when capacity_rollup predates this table
         with Session(engine) as session:
             count = build_rollup(session)
             session.commit()
