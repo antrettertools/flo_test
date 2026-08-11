@@ -1,4 +1,4 @@
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
 
 import { useCapacityTotals } from '../../hooks/useCapacityTotals';
@@ -57,18 +57,41 @@ export function MapView() {
     const map = mapRef.current;
     if (!map || !geojson) return;
 
+    // Only one of land-fill/kreis-fill should ever be on the map at once.
+    // Task 12 solved this exact problem for the bubble layer (see the
+    // cleanup effect below) but the choropleth effect never got the mirror
+    // fix: without this, drilling into a Land leaves kreis-fill stacked on
+    // top of land-fill, and navigating back via the breadcrumb leaves the
+    // Kreis choropleth visible (and both layers' click handlers live,
+    // which could fire together and skip two levels in one click).
+    const inactiveLevel = activeLevel === 'land' ? 'kreis' : 'land';
+    const inactiveSourceId = `${inactiveLevel}-source`;
+    const inactiveLayerId = `${inactiveLevel}-fill`;
+    if (map.getLayer(inactiveLayerId)) map.removeLayer(inactiveLayerId);
+    if (map.getSource(inactiveSourceId)) map.removeSource(inactiveSourceId);
+
     const sourceId = `${activeLevel}-source`;
     const layerId = `${activeLevel}-fill`;
+
+    // Hoisted out of the add-guard below (and using the same metric branch
+    // as the setFeatureState call further down) so the ramp domain
+    // recomputes whenever totals or the active metric change, rather than
+    // being frozen at whatever `totals` happened to be (often still
+    // undefined) the first time this source was added.
+    const maxValue = Math.max(
+      ...(totals?.results.map((r) => (filters.metric === 'capacity' ? r.capacity_kw_sum : r.unit_count) ?? 0) ?? [1]),
+      1,
+    );
+
     if (!map.getSource(sourceId)) {
       map.addSource(sourceId, { type: 'geojson', data: geojson, promoteId: 'ags' });
-      const maxValue = Math.max(...(totals?.results.map((r) => r.capacity_kw_sum ?? r.unit_count) ?? [1]), 1);
       map.addLayer({
         id: layerId,
         type: 'fill',
         source: sourceId,
         paint: { 'fill-color': buildChoroplethColorExpression(maxValue), 'fill-outline-color': colors.greydark },
       });
-      map.on('click', layerId, (e) => {
+      map.on('click', layerId, (e: maplibregl.MapLayerMouseEvent) => {
         const ags = e.features?.[0]?.properties?.ags as string | undefined;
         if (!ags) return;
         if (activeLevel === 'land') {
@@ -83,6 +106,8 @@ export function MapView() {
           if (currentLandAgs) selectKreis(currentLandAgs, ags);
         }
       });
+    } else {
+      map.setPaintProperty(layerId, 'fill-color', buildChoroplethColorExpression(maxValue));
     }
 
     totals?.results.forEach((row) => {

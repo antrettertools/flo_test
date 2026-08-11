@@ -29,6 +29,7 @@ vi.mock('maplibre-gl', () => {
       addedLayers.delete(id);
     });
     setFeatureState = vi.fn();
+    setPaintProperty = vi.fn();
     remove = vi.fn();
     fitBounds = vi.fn();
     getZoom = vi.fn(() => 10);
@@ -164,6 +165,62 @@ describe('MapView', () => {
         expect(addedSources.has('unit-points-source')).toBe(false);
       });
       expect(addedLayers.has('unit-points-circle')).toBe(false);
+    });
+  });
+
+  describe('choropleth layer cleanup on level change', () => {
+    it('removes land-fill/land-source after drilling into a Land', async () => {
+      // Start at national level — activeLevel is 'land', so land-fill/
+      // land-source get added.
+      useExplorerStore.setState({ selection: { level: 'national', landAgs: null, kreisAgs: null } });
+
+      renderWithQuery(<MapView />);
+
+      await waitFor(() => {
+        expect(addedSources.has('land-source')).toBe(true);
+      });
+      expect(addedLayers.has('land-fill')).toBe(true);
+
+      // Drill into a Land — activeLevel flips to 'kreis'. Without the C2
+      // fix, land-fill/land-source would be left on the map underneath the
+      // new kreis-fill/kreis-source.
+      act(() => {
+        useExplorerStore.setState({ selection: { level: 'land', landAgs: 'A', kreisAgs: null } });
+      });
+
+      await waitFor(() => {
+        expect(addedSources.has('kreis-source')).toBe(true);
+      });
+      expect(addedLayers.has('kreis-fill')).toBe(true);
+      expect(addedSources.has('land-source')).toBe(false);
+      expect(addedLayers.has('land-fill')).toBe(false);
+    });
+
+    it('removes kreis-fill/kreis-source after returning to national via the breadcrumb', async () => {
+      // Start already drilled into a Land — activeLevel is 'kreis'.
+      useExplorerStore.setState({ selection: { level: 'land', landAgs: 'A', kreisAgs: null } });
+
+      renderWithQuery(<MapView />);
+
+      await waitFor(() => {
+        expect(addedSources.has('kreis-source')).toBe(true);
+      });
+      expect(addedLayers.has('kreis-fill')).toBe(true);
+
+      // Navigate back to national via the breadcrumb (selectNational).
+      // Without the C2 fix, kreis-fill/kreis-source would stay on the map,
+      // on top of the re-added land-fill, making back-navigation appear to
+      // do nothing.
+      act(() => {
+        useExplorerStore.setState({ selection: { level: 'national', landAgs: null, kreisAgs: null } });
+      });
+
+      await waitFor(() => {
+        expect(addedSources.has('land-source')).toBe(true);
+      });
+      expect(addedLayers.has('land-fill')).toBe(true);
+      expect(addedSources.has('kreis-source')).toBe(false);
+      expect(addedLayers.has('kreis-fill')).toBe(false);
     });
   });
 });
