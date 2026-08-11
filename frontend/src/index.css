@@ -5,8 +5,7 @@
 
 body {
   font-family: 'Lato', sans-serif;
-  color: #33302F;
-  background-color: #FFFFFF;
+  @apply text-c3-text bg-c3-white;
 }
 
 h1, h2, h3, h4, h5, h6 {
