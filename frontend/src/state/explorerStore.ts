@@ -63,6 +63,12 @@ export const useExplorerStore = create<ExplorerState>()((set) => ({
         ...state.filters,
         technologies: tab === 'storage' ? ['storage'] : [...DEFAULT_RENEWABLE_TECHNOLOGIES],
         sizeClasses: [],
+        // Storage has no capacity metric to show (capacity_kw_sum is only
+        // populated for generation-category units server-side) — the spec
+        // gives storage unit count only, no capacity/energy toggle. Force
+        // count mode on entry so the tab never lands on a metric that's
+        // structurally guaranteed to render as zero.
+        metric: tab === 'storage' ? 'count' : state.filters.metric,
       },
     })),
   selectNational: () => set({ selection: { level: 'national', landAgs: null, kreisAgs: null } }),

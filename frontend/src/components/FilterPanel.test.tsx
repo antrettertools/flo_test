@@ -31,4 +31,10 @@ describe('FilterPanel', () => {
     expect(screen.getByText(/count/i)).toBeInTheDocument();
     expect(screen.getByText(/capacity/i)).toBeInTheDocument();
   });
+
+  it('hides the count/capacity metric toggle on the storage tab (capacity_kw_sum is always null for storage)', () => {
+    useExplorerStore.setState((s) => ({ ...s, tab: 'storage' }));
+    renderWithQuery(<FilterPanel />);
+    expect(screen.queryByText(/count \/ capacity/i)).not.toBeInTheDocument();
+  });
 });

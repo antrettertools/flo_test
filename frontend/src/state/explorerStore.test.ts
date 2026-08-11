@@ -48,4 +48,10 @@ describe('explorerStore', () => {
       'solar', 'wind', 'biomass', 'hydro', 'gsgk',
     ]);
   });
+
+  it('setTab to storage forces metric to count (capacity_kw_sum is always null for storage)', () => {
+    useExplorerStore.getState().setMetric('capacity');
+    useExplorerStore.getState().setTab('storage');
+    expect(useExplorerStore.getState().filters.metric).toBe('count');
+  });
 });

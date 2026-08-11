@@ -22,12 +22,14 @@ export function FilterPanel() {
 
   return (
     <div className="space-y-6">
-      <Toggle
-        enabled={filters.metric === 'capacity'}
-        onChange={(enabled) => setMetric(enabled ? 'capacity' : 'count')}
-        label="Count / Capacity"
-        description="Switch how generation totals are measured"
-      />
+      {tab !== 'storage' && (
+        <Toggle
+          enabled={filters.metric === 'capacity'}
+          onChange={(enabled) => setMetric(enabled ? 'capacity' : 'count')}
+          label="Count / Capacity"
+          description="Switch how generation totals are measured"
+        />
+      )}
       <Toggle
         enabled={filters.timeMode === 'period'}
         onChange={(enabled) => setTimeMode(enabled ? 'period' : 'total')}
