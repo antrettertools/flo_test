@@ -21,7 +21,15 @@ export function DataProvenanceFooter() {
     health.region_join_match_rate != null ? `${(health.region_join_match_rate * 100).toFixed(2)}%` : 'unknown';
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-10 flex justify-center pointer-events-none">
+    <div className="absolute bottom-0 left-0 right-0 z-10 flex flex-col items-center gap-2 p-2 pointer-events-none">
+      {health.capacity_rollup_row_count === 0 && (
+        <div className="pointer-events-auto max-w-md shadow-md">
+          <Alert type="warning" title="Rollup data missing">
+            capacity_rollup has no rows — whole-month totals may silently show as zero or incomplete. Run the
+            ingestion rollup step.
+          </Alert>
+        </div>
+      )}
       <div className="pointer-events-auto bg-c3-white/90 rounded-t-lg px-4 py-1.5 text-xs text-c3-greydark border border-b-0 border-c3-greylight">
         Data as of {importedAt} · {matchRate} of units matched to a region
       </div>

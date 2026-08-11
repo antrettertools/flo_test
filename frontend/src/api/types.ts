@@ -47,6 +47,7 @@ export interface HealthResponse {
   vg250_source_version: string | null;
   region_join_match_rate: number | null;
   mastr_row_counts: Record<string, number> | null;
+  capacity_rollup_row_count: number;
 }
 
 export interface UnitPoint {

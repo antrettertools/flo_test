@@ -27,6 +27,13 @@ class HealthResponse(BaseModel):
     vg250_source_version: str | None = None
     region_join_match_rate: float | None = None
     mastr_row_counts: dict[str, int] | None = None
+    # Row count of capacity_rollup, the pre-aggregated table whole-month
+    # /capacity/totals queries read from. init_db creates the table empty;
+    # it's only populated by ingestion.build_db.build() or the explicit
+    # `python -m ingestion.cli rollup` step. If it's zero while capacity_unit
+    # has data (has_data=True), rollup-backed queries return [] silently
+    # with no error -- this field lets the frontend surface that instead.
+    capacity_rollup_row_count: int = 0
 
 
 class GroupByField(str, Enum):

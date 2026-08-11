@@ -5,14 +5,14 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.deps import get_db
 from api.schemas import HealthResponse, SizeClassMeta, TechnologyMeta
 from common.enums import CATEGORY_BY_TECHNOLOGY, IS_RENEWABLE, Technology
 from common.size_class import size_class_definitions
-from db.models import ImportBatch
+from db.models import CapacityRollup, ImportBatch
 
 router = APIRouter(prefix="/meta", tags=["meta"])
 
@@ -42,9 +42,10 @@ def get_health(db: Session = Depends(get_db)) -> HealthResponse:
     batch = db.execute(
         select(ImportBatch).order_by(ImportBatch.started_at.desc()).limit(1)
     ).scalar_one_or_none()
+    rollup_row_count = db.execute(select(func.count()).select_from(CapacityRollup)).scalar_one()
 
     if batch is None:
-        return HealthResponse(has_data=False)
+        return HealthResponse(has_data=False, capacity_rollup_row_count=rollup_row_count)
 
     return HealthResponse(
         has_data=True,
@@ -60,4 +61,5 @@ def get_health(db: Session = Depends(get_db)) -> HealthResponse:
             if batch.mastr_row_counts_json
             else None
         ),
+        capacity_rollup_row_count=rollup_row_count,
     )
