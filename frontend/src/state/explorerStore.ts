@@ -54,7 +54,7 @@ function initialState() {
   };
 }
 
-export const useExplorerStore = create<ExplorerState>()((set, get) => ({
+export const useExplorerStore = create<ExplorerState>()((set) => ({
   ...initialState(),
   setTab: (tab) =>
     set((state) => ({

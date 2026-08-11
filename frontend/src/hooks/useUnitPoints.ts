@@ -8,6 +8,7 @@ export interface UnitPointsParams {
   technology?: string[];
   category?: string;
   size_class?: string[];
+  [key: string]: string | string[] | undefined;
 }
 
 export function useUnitPoints(params: UnitPointsParams) {
